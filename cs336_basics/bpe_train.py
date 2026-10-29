@@ -44,8 +44,11 @@ def merge_words(
 )->dict[Word,int]:
     new_words={}
     for word,times in words.items():
-        new_word=merge_word(word,pair)
-        new_words[new_word]=new_words.get(new_word,0)+times
+        if pair[0] in word and pair[1] in word:
+            new_word=merge_word(word,pair)
+            new_words[new_word]=new_words.get(new_word,0)+times
+        else:
+            new_words[word]=new_words.get(word,0)+times
 
     return new_words
 
