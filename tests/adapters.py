@@ -13,6 +13,8 @@ from cs336_basics.linear import Linear
 from cs336_basics.embedding import Embedding
 
 from cs336_basics.RMSnorm import RMSNorm
+
+from cs336_basics.feedforward import SwiGLU
 def run_linear(
     d_in: int,
     d_out: int,
@@ -91,9 +93,10 @@ def run_swiglu(
     # swiglu.w1.weight.data = w1_weight
     # swiglu.w2.weight.data = w2_weight
     # swiglu.w3.weight.data = w3_weight
-    raise NotImplementedError
 
-
+    swiglu=SwiGLU(d_model,d_ff)
+    swiglu.load_state_dict({"fc1.W":w1_weight,"fc2.W":w2_weight,"fc3.W":w3_weight})
+    return swiglu.forward(in_features)
 def run_scaled_dot_product_attention(
     Q: Float[Tensor, " ... queries d_k"],
     K: Float[Tensor, " ... keys d_k"],
