@@ -70,13 +70,16 @@ def train_bpe(
         text=f.read()
 
     words=Counter()
-    chunks=split_special_tokens(text,special_tokens)
-    for chunk in chunks:
-        for pretoken in pretokenize(chunk):
-            encoded=pretoken.encode("utf-8")
-            word=tuple(bytes([b])for b in encoded)
-            words[word]+=1
 
+    chunks = split_special_tokens(text, special_tokens)
+    special_token_set = set(special_tokens)
+    for chunk in chunks:
+        if chunk in special_token_set:
+            continue
+        for pretoken in pretokenize(chunk):
+            encoded = pretoken.encode("utf-8")
+            word = tuple(bytes([b]) for b in encoded)
+            words[word] += 1
 
     while len(vocab)<vocab_size:
         pair_counts=count_pairs(words)

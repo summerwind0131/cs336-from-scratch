@@ -21,16 +21,17 @@ def split_special_tokens(
         re.escape(token)
         for token in sorted(special_tokens,key=len,reverse=True)
     )
-    return re.split(pattern,text)
 
+    return [
+        part for part in re.split(f"({pattern})", text)
+        if part
+    ]
 
-def pretokenize(text:str)->list[str]:
-    pretokens=[]
-    for match in regex.finditer(PAT,text):
-        pretokens.append(match.group())
-
-    return pretokens
-
+def pretokenize(text: str) -> list[str]:
+    return [
+        match.group()
+        for match in regex.finditer(PAT, text)
+    ]
 
 if __name__ =="__main__":
     text="Hello world! I love Python."
