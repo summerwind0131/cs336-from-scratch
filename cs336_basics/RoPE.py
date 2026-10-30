@@ -19,8 +19,8 @@ class RotaryPositionalEmbedding(nn.Module):
         cos_angles=torch.cos(angles)
         sin_angles=torch.sin(angles)
 
-        self.register_buffer("cos_angles", cos_angles)
-        self.register_buffer("sin_angles",sin_angles)
+        self.register_buffer("cos_angles", cos_angles,persistent=False)
+        self.register_buffer("sin_angles",sin_angles,persistent=False)
         
         
 
