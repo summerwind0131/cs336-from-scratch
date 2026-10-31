@@ -56,5 +56,13 @@ def lr_cosine_schedule(t,alpha_max,alpha_min,Tw,Tc):
     elif t>Tc:
         return alpha_min
 
-    
+
+
+def gradient_clipping(params,M,eps=1e-6):
+    grads=[p.grad for p in params if p.grad is not None]
+    norm=sum(g.square().sum()for g in grads).sqrt()
+    if norm >M:
+        scale=M/(norm+eps)
+        for g in grads:
+            g*=scale
                 
