@@ -1,50 +1,33 @@
-# CS336 Spring 2025 Assignment 1: Basics
+# CS336 from scratch
 
-For a full description of the assignment, see the assignment handout at
-[cs336_assignment1_basics.pdf](./cs336_assignment1_basics.pdf)
+CS336 Spring 2025 的作业与学习记录，统一保存在一个 Git 仓库中。
 
-If you see any issues with the assignment handout or code, please feel free to
-raise a GitHub issue or open a pull request with a fix.
+| 目录 | 内容 |
+| --- | --- |
+| [assignment1-basics](assignment1-basics/) | 作业 1：Basics，保留原有实现和提交历史 |
+| [assignment2-systems](assignment2-systems/) | 作业 2：Systems，基于官方 `spring2025` 标签 |
 
-## Setup
+各作业独立管理 Python 环境。请进入对应目录后使用 `uv run`，具体设置见各自的 README 和作业讲义。
 
-### Environment
-We manage our environments with `uv` to ensure reproducibility, portability, and ease of use.
-Install `uv` [here](https://github.com/astral-sh/uv#installation) (recommended), or run `pip install uv`/`brew install uv`.
-We recommend reading a bit about managing projects in `uv` [here](https://docs.astral.sh/uv/guides/projects/#managing-dependencies) (you will not regret it!).
+## 官方来源
 
-You can now run any code in the repo using
+- 作业 1：<https://github.com/stanford-cs336/assignment1-basics>
+- 作业 2：<https://github.com/stanford-cs336/assignment2-systems/tree/spring2025>
+
+作业 2 通过 `git subtree` 导入，目录中的文件由本仓库直接跟踪，无需初始化 submodule。
+其 `cs336-basics` 目录保留官方随附的实现；当前没有改为依赖自己的作业 1。
+
+## Git 操作
+
+在本目录统一提交和推送两份作业的改动：
+
 ```sh
-uv run <python_file_path>
-```
-and the environment will be automatically solved and activated when necessary.
-
-### Run unit tests
-
-
-```sh
-uv run pytest
+git status
+git add <修改的文件>
+git commit -m "描述修改"
+git push origin main
 ```
 
-Initially, all tests should fail with `NotImplementedError`s.
-To connect your implementation to the tests, complete the
-functions in [./tests/adapters.py](./tests/adapters.py).
-
-### Download data
-Download the TinyStories data and a subsample of OpenWebText
-
-``` sh
-mkdir -p data
-cd data
-
-wget https://huggingface.co/datasets/roneneldan/TinyStories/resolve/main/TinyStoriesV2-GPT4-train.txt
-wget https://huggingface.co/datasets/roneneldan/TinyStories/resolve/main/TinyStoriesV2-GPT4-valid.txt
-
-wget https://huggingface.co/datasets/stanford-cs336/owt-sample/resolve/main/owt_train.txt.gz
-gunzip owt_train.txt.gz
-wget https://huggingface.co/datasets/stanford-cs336/owt-sample/resolve/main/owt_valid.txt.gz
-gunzip owt_valid.txt.gz
-
-cd ..
-```
-
+本机的 `origin` 指向个人仓库 `summerwind0131/cs336-from-scratch`，
+`upstream` 指向官方作业 1 仓库，`upstream-assignment2` 指向官方作业 2 仓库。
+这两个官方仓库各自只包含一份作业；更新时应按对应目录导入。
