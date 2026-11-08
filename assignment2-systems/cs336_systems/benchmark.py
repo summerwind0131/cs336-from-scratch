@@ -4,10 +4,15 @@ import timeit
 import json
 import statistics
 from pathlib import Path
+from contextlib import nullcontext
+import math
+import torch.cuda.nvtx as nvtx
+from einops import einsum
 
-
+import cs336_basics.model as basics_model
 from cs336_basics.model import BasicsTransformerLM
-from cs336_basics.nn_utils import cross_entropy
+from cs336_basics.nn_utils import cross_entropy,softmax
+from cs336_systems.optimizer import AdamW
 
 MODEL_FIELDS=("d_model","d_ff","num_layers","num_heads")
 
@@ -41,7 +46,7 @@ def parse_args():
     # 测量配置
     parser.add_argument(
         "--mode",
-        choices=("forward", "forward-backward"),
+        choices=("forward", "forward-backward","train"),
         default="forward-backward",
     )
     parser.add_argument("--warmup-steps", type=int, default=5)
@@ -55,9 +60,13 @@ def parse_args():
         default="float32",
     )
     parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument(
-        "--output", default=None, help="Optional output JSON path."
-    )
+    parser.add_argument("--lr", type=float, default=1e-3)
+    parser.add_argument("--weight-decay", type=float, default=0.01)
+
+
+    # 是否启用 NVTX，以及结果保存位置
+    parser.add_argument("--nvtx", action="store_true")
+    parser.add_argument("--output", default=None)
 
     args = parser.parse_args()
 
@@ -130,8 +139,32 @@ def prepare(args):
 
     return model,token_ids,targets
 
+def nvtx_range(name, enabled):
+    return nvtx.range(name) if enabled else nullcontext()
 
-def run_step(model,token_ids,targets,mode):
+def annotated_attention(Q,K,V,mask=None):
+    enabled=Q.is_cuda
+    with nvtx_range("attention",enabled):
+        with nvtx_range("attention/qk_matmul",enabled):
+            scores=einsum(
+                Q,K,"... query d_k,... key d_k->... query key"
+            )
+        with nvtx_range("attention/scale_mask",enabled):
+            scores=scores/math.sqrt(K.shape[-1])
+            if mask is not None:
+                scores=torch.where(mask,scores,float("-inf"))
+
+        with nvtx_range("attention/softmax",enabled):
+            weights=softmax(scores,dim=-1)
+        with nvtx_range("attention/av_matmul",enabled):
+            output=einsum(
+                weights,V,"... query key, ... key d_v-> ... query d_v"
+            )
+        return output
+        
+
+def run_step(model,token_ids,targets,mode,optimizer=None,
+             nvtx_enabled=False):
     device=token_ids.device
     def sync():
         if device.type=="cuda":
@@ -139,50 +172,74 @@ def run_step(model,token_ids,targets,mode):
     if mode=="forward":
         with torch.no_grad():
             sync()
-            t0=timeit.default_timer()
-
-            model(token_ids)
-            sync()
-            t1=timeit.default_timer()
+            with nvtx_range("forward",nvtx_enabled):
+                t0=timeit.default_timer()
+                model(token_ids)
+                sync()
+                t1=timeit.default_timer()
 
             return {"forward":t1-t0,}
           
-    elif mode=="forward-backward":
+    elif mode in ("forward-backward","train"):
         model.zero_grad(set_to_none=True)
         sync()
-        t0=timeit.default_timer()
 
-        logits=model(token_ids)
-        sync()
-        t1=timeit.default_timer()
+        with nvtx_range("forward",nvtx_enabled):
+            t0=timeit.default_timer()
+            logits=model(token_ids)
+            sync()
+            t1=timeit.default_timer()
 
-        loss=cross_entropy(logits,targets)
-        sync()
-        t2=timeit.default_timer()
-        
-        loss.backward()
-        sync()
-        t3=timeit.default_timer()
+        with nvtx_range("loss",nvtx_enabled):
+            loss=cross_entropy(logits,targets)
+            sync()
+            t2=timeit.default_timer()
 
-        return {
+        with nvtx_range("backward",nvtx_enabled):
+            loss.backward()
+            sync()
+            t3=timeit.default_timer()
+
+        timings={
             "forward":t1-t0,
             "loss":t2-t1,
             "backward":t3-t2,
         }
-def benchmark(model,token_ids,targets,args):
+
+        if mode == "train":
+            assert optimizer is not None
+            with nvtx_range("optimizer_step", nvtx_enabled):
+                start = timeit.default_timer()
+                optimizer.step()
+                sync()
+                timings["optimizer_step"] = timeit.default_timer() - start
+
+        return timings
+
+
+    
+def benchmark(model,token_ids,targets,args,optimizer=None):
     warmup_steps=args.warmup_steps
     measurement_steps=args.measurement_steps
     mode=args.mode
 
-    for i in range(warmup_steps):
-        run_step(model,token_ids,targets,mode)
+    with nvtx_range("warmup", args.nvtx):
+        for i in range(warmup_steps):
+            run_step(model,token_ids,targets,mode,optimizer=optimizer,nvtx_enabled=args.nvtx)
 
     results=[]
-    for i in range(measurement_steps):
-        timings=run_step(model,token_ids,targets,mode)
-        results.append(timings)
+
+    with nvtx_range("measurement", args.nvtx):
+        for i in range(measurement_steps):
+            with nvtx_range(f"step_{i}", args.nvtx):
+                timings = run_step(
+                    model, token_ids, targets, mode,
+                    optimizer=optimizer, nvtx_enabled=args.nvtx,
+                )
+            results.append(timings)
 
     return results
+
 
 def report(results,args):
     summary={}
@@ -242,10 +299,17 @@ def report(results,args):
 
 def main():
     args=parse_args()
+    if args.nvtx:
+        basics_model.scaled_dot_product_attention = annotated_attention
     model,token_ids,targets=prepare(args)
-    results=benchmark(model,token_ids,targets,args)
+
+    optimizer = None
+    if args.mode == "train":
+        optimizer = AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
+
+    results=benchmark(model,token_ids,targets,args,optimizer=optimizer)
     report(results,args)
-    
+
 
 
 if __name__=="__main__":
