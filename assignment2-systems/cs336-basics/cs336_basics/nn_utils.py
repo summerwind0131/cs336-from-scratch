@@ -18,8 +18,12 @@ def cross_entropy(inputs, targets):
 
 
 def clip_gradient(parameters, max_norm):
-    grads = [p.grad for p in parameters if p.grad is not None]
-    norm = 0.0
+    grads: list[torch.Tensor] = [
+    p.grad for p in parameters if p.grad is not None]
+    
+    if not grads:
+         return
+    norm = grads[0].new_zeros(())
 
     for g in grads:
         norm += (g**2).sum()
