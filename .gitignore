@@ -169,3 +169,5 @@ cython_debug/
 
 .pytest_tmp
 /.DS_Store
+
+tmp/
