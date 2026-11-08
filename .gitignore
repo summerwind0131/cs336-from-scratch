@@ -168,3 +168,4 @@ cython_debug/
 /outputs/
 
 .pytest_tmp
+/.DS_Store
