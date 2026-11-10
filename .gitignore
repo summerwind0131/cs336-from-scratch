@@ -169,5 +169,9 @@ cython_debug/
 
 .pytest_tmp
 /.DS_Store
+<<<<<<< HEAD
 
 tmp/
+=======
+pyrightconfig.json
+>>>>>>> 527dd6a6689325276e0cfbd15ba84b649c12c17e

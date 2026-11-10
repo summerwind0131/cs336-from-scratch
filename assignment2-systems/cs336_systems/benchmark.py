@@ -68,6 +68,11 @@ def parse_args():
     parser.add_argument("--nvtx", action="store_true")
     parser.add_argument("--output", default=None)
 
+    #是否启用memoproprofiling,以及结果保存位置
+    parser.add_argument("--memory-profile",action="store_true")
+    parser.add_argument("--memory-output",default=None)
+
+
     args = parser.parse_args()
 
     # 用户显式传入的参数优先，其余从预设补齐
@@ -95,6 +100,15 @@ def parse_args():
         parser.error("d_model must be divisible by num_heads")
     if (args.d_model // args.num_heads) % 2 != 0:
         parser.error("RoPE requires an even head dimension")
+
+    if args.memory_profile:
+        if torch.device(args.device).type != "cuda":
+            parser.error("--memory-profile requires --device cuda")
+
+        if not args.memory_output:
+            parser.error("--memory-profile requires --memory-output")
+
+    return args
 
     return args
 
@@ -222,13 +236,21 @@ def benchmark(model,token_ids,targets,args,optimizer=None):
     warmup_steps=args.warmup_steps
     measurement_steps=args.measurement_steps
     mode=args.mode
+    device=token_ids.device
 
+    #预热
     with nvtx_range("warmup", args.nvtx):
         for i in range(warmup_steps):
             run_step(model,token_ids,targets,mode,optimizer=optimizer,nvtx_enabled=args.nvtx)
 
-    results=[]
 
+    #峰值统计
+    if args.memory_profile:
+        torch.cuda.synchronize(device)
+        torch.cuda.memory.reset_peak_memory_stats(device)
+
+    #开始正式测量
+    results=[]
     with nvtx_range("measurement", args.nvtx):
         for i in range(measurement_steps):
             with nvtx_range(f"step_{i}", args.nvtx):
@@ -237,11 +259,18 @@ def benchmark(model,token_ids,targets,args,optimizer=None):
                     optimizer=optimizer, nvtx_enabled=args.nvtx,
                 )
             results.append(timings)
+    #读取峰值
+    memory_stats=None
+    if args.memory_profile:
+        torch.cuda.synchronize(device)
+        memory_stats={
+            "peak_allocated_bytes":torch.cuda.max_memory_allocated(device),
+            "peak_reserved_bytes":torch.cuda.max_memory_reserved(device)
+        }
+    return results,memory_stats
 
-    return results
 
-
-def report(results,args):
+def report(results,args,memory_stats=None):
     summary={}
 
     print(
@@ -277,6 +306,13 @@ def report(results,args):
             f"{std_text:>12}"
         )
 
+    if memory_stats is not None:
+        allocated_gib = memory_stats["peak_allocated_bytes"] / 1024**3
+        reserved_gib = memory_stats["peak_reserved_bytes"] / 1024**3
+
+        print(f"Peak allocated: {allocated_gib:.3f} GiB")
+        print(f"Peak reserved:  {reserved_gib:.3f} GiB")
+
     if args.output is not None:
         output_path = Path(args.output)
         output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -287,6 +323,7 @@ def report(results,args):
             "std_ddof": 1,
             "summary": summary,
             "measurements": results,
+            "memory":memory_stats,
         }
 
         output_path.write_text(
@@ -298,19 +335,61 @@ def report(results,args):
 
 
 def main():
-    args=parse_args()
+    args = parse_args()
+
     if args.nvtx:
         basics_model.scaled_dot_product_attention = annotated_attention
-    model,token_ids,targets=prepare(args)
 
-    optimizer = None
-    if args.mode == "train":
-        optimizer = AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
+    recording = False
+    memory_path = None
 
-    results=benchmark(model,token_ids,targets,args,optimizer=optimizer)
-    report(results,args)
+    try:
+        if args.memory_profile:
+            if not torch.cuda.is_available():
+                raise RuntimeError(
+                    "CUDA is unavailable in this environment"
+                )
+
+            memory_path = Path(args.memory_output)
+            memory_path.parent.mkdir(parents=True, exist_ok=True)
+
+            # 在创建模型之前开启，保留参数分配的调用栈
+            torch.cuda.memory._record_memory_history(
+                max_entries=1000000
+            )
+            recording = True
+
+        model, token_ids, targets = prepare(args)
+
+        optimizer = None
+        if args.mode == "train":
+            optimizer = AdamW(
+                model.parameters(),
+                lr=args.lr,
+                weight_decay=args.weight_decay,
+            )
+
+        results, memory_stats = benchmark(
+            model, token_ids, targets, args,
+            optimizer=optimizer,
+        )
+
+        # 只有成功完成测量，才保存正式实验快照
+        if memory_path is not None:
+            torch.cuda.synchronize(token_ids.device)
+
+            torch.cuda.memory._dump_snapshot(str(memory_path))
+            print(f"Saved memory snapshot to {memory_path}")
+
+        report(results, args, memory_stats)
+
+    finally:
+        # 计算、保存或报告发生异常时，也会执行这里
+        if recording:
+            torch.cuda.memory._record_memory_history(enabled=None)
 
 
-
-if __name__=="__main__":
+if __name__ == "__main__":
     main()
+
+
