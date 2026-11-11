@@ -72,6 +72,10 @@ def parse_args():
     parser.add_argument("--memory-profile",action="store_true")
     parser.add_argument("--memory-output",default=None)
 
+    #是否测试torch.compile
+    parser.add_argument("--compile",action="store_true")
+
+
 
     args = parser.parse_args()
 
@@ -360,7 +364,8 @@ def main():
             recording = True
 
         model, token_ids, targets = prepare(args)
-
+        if args.compile:
+            model=torch.compile(model)
         optimizer = None
         if args.mode == "train":
             optimizer = AdamW(

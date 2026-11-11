@@ -26,6 +26,8 @@ def parse_args():
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--output", default="results/attention.csv")
 
+    parser.add_argument("-compile",action="store_true")
+
     args = parser.parse_args()
 
     if args.warmup_steps < 0 or args.measurement_steps < 1:
@@ -66,6 +68,9 @@ def benchmark_one(args, d_model, seq_len):
     mask = torch.ones(
         seq_len, seq_len, device=device, dtype=torch.bool
     ).tril_()
+    attention_fn=scaled_dot_product_attention
+    if args.compile:
+        attention_fn=torch.compile(attention_fn)
 
     forward_times = []
     backward_times = []
@@ -79,7 +84,7 @@ def benchmark_one(args, d_model, seq_len):
         # 1. 前向计时：每次都创建新的计算图。
         start = timeit.default_timer()
 
-        output = scaled_dot_product_attention(Q, K, V, mask)
+        output = attention_fn(Q, K, V, mask)
 
         sync()
         forward_ms = (timeit.default_timer() - start) * 1000
