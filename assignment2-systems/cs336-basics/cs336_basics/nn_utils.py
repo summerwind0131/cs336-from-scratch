@@ -6,6 +6,7 @@ def softmax(x, dim=-1):
     exponentiated_rescaled_input = torch.exp(rescaled_input)
     return exponentiated_rescaled_input / torch.sum(exponentiated_rescaled_input, dim=dim, keepdim=True)
 
+
 def log_softmax(x, dim=-1):
     x_max = torch.max(x, dim=dim, keepdim=True)[0]
     x = x - x_max
@@ -18,11 +19,9 @@ def cross_entropy(inputs, targets):
 
 
 def clip_gradient(parameters, max_norm):
-    grads: list[torch.Tensor] = [
-    p.grad for p in parameters if p.grad is not None]
-    
+    grads: list[torch.Tensor] = [p.grad for p in parameters if p.grad is not None]
     if not grads:
-         return
+        return
     norm = grads[0].new_zeros(())
 
     for g in grads:
